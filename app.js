@@ -3,11 +3,25 @@ const tf = require('@tensorflow/tfjs-node');
 const multer = require('multer');
 const classMapping = require('./pkg/constants')
 const classifyRepository = require('./src/classifyrepository')
+const imgur = require('imgur')
+const path = require('path')
+const fs = require('fs')
+const cors = require('cors')
 
 const app = express();
-const port = 3000;
+const port = 5000;
+app.use(cors());
 
-const storage = multer.memoryStorage();
+const storage = multer.diskStorage({
+  destination: './uploads',
+  filename: (req, file, callback) => {
+    callback(
+      null,
+      file.fieldname + "-" + Date.now() + path.extname(file.originalname)
+    )
+  }
+})
+
 const upload = multer({ storage: storage });
 
 async function loadModel() {
@@ -17,11 +31,17 @@ async function loadModel() {
 }
 
 app.post('/predict', upload.single('image'), async (req, res) => {
+  const file = req.file
   try {
     const model = await loadModel();
+    
+    const url = await imgur.uploadFile(`./uploads/${file.filename}`)
+    const imgUrl = url.link
+    const image = fs.readFileSync(`./uploads/${file.filename}`)
 
-    const imageBuffer = req.file.buffer;
-    const imageTensor = tf.node.decodeImage(imageBuffer, 3);
+    fs.unlinkSync(`./uploads/${file.filename}`)
+
+    const imageTensor = tf.node.decodeImage(image, 3);
     
     const resizedImage = tf.image.resizeBilinear(imageTensor, [224, 224]);
 
@@ -46,7 +66,7 @@ app.post('/predict', upload.single('image'), async (req, res) => {
     const date = currentYear + "-" + currentMonth + "-" + currentDay + " " + currentHour + ":" + currentMinute + ":" + currentSecond
 
 
-    classifyRepository.insertData(classMapping, classPos, highest, date)
+    classifyRepository.insertData(classMapping, classPos, highest, date, imgUrl)
     res.json(
         {
             code: 200,
